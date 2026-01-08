@@ -5,7 +5,7 @@
 Ein Python-Tool zum Loggen des KNX-Busverkehrs.
 - Liest die Konfiguration aus einer .env-Datei.
 - Loggt in eine rotierende Log-Datei im benutzerdefinierten Pfad.
-- Komprimiert alte Logs um Mitternacht automatisch mit ZIP.
+- Komprimiert alte Logs um Mitternacht automatisch mit XZ.
 - Dekodiert Payloads, wenn eine ETS-Projektdatei konfiguriert ist.
 - Schreibt alle Schritte und Fehler in eine dedizierte Debug-Logdatei.
 """
@@ -14,7 +14,7 @@ import asyncio
 import logging
 import sys
 import os
-import zipfile
+import lzma
 from logging.handlers import TimedRotatingFileHandler
 from datetime import datetime
 from pathlib import Path
@@ -35,26 +35,28 @@ from xknx.dpt.dpt_19 import KNXDateTime
 
 # --- LOGGING-KONFIGURATION ---
 
-class ZipTimedRotatingFileHandler(TimedRotatingFileHandler):
+class XZTimedRotatingFileHandler(TimedRotatingFileHandler):
     """
-    Handler for rotating logs with ZIP compression for better Windows compatibility.
+    Handler for rotating logs with XZ (lzma) compression for better compression ratio.
     """
     def rotator(self, source: str, dest: str) -> None:
         """
-        Compresses the source log file into a zip archive.
+        Compresses the source log file into an .xz-compressed file.
         The destination path from the base class already includes the timestamp.
         """
-        zip_path = f"{dest}.zip"
+        xz_path = f"{dest}.xz"
         try:
-            with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-                # Add the source file to the zip, using just the filename inside the archive
-                zf.write(source, os.path.basename(source))
+            # Read source as binary and write compressed XZ
+            with open(source, "rb") as sf:
+                data = sf.read()
+            with lzma.open(xz_path, "wb") as xf:
+                xf.write(data)
             os.remove(source)
-            logging.info(f"Log file rotated and compressed to {zip_path}")
+            logging.info(f"Log file rotated and compressed to {xz_path}")
         except Exception as e:
             # Using print as logging might be part of the problem
-            print(f"Error during log rotation to ZIP: {e}", file=sys.stderr)
-            logging.exception("Fehler bei der Log-Rotation zu ZIP")
+            print(f"Error during log rotation to XZ: {e}", file=sys.stderr)
+            logging.exception("Fehler bei der Log-Rotation zu XZ")
 
 
 def setup_knx_bus_logger(log_path: str, is_daemon_mode: bool) -> logging.Logger:
@@ -73,8 +75,8 @@ def setup_knx_bus_logger(log_path: str, is_daemon_mode: bool) -> logging.Logger:
     formatter = logging.Formatter('%(message)s')
     
     # 1. Handler: Loggt immer in die rotierende Datei
-    file_handler = ZipTimedRotatingFileHandler(
-        log_file,
+    file_handler = XZTimedRotatingFileHandler(
+        str(log_file),
         when="midnight",
         interval=1,
         backupCount=30,  # Keep 30 days of logs
@@ -198,6 +200,7 @@ def load_project(file_path: str, password: Optional[str]) -> Optional[KNXProject
         return None
 
 
+
 def telegram_received_cb(telegram: Telegram, knx_project: Optional[KNXProject], logger: logging.Logger):
     """Callback, der bei jedem Telegramm aufgerufen wird."""
     log_message = telegram_to_log_message(telegram, knx_project)
@@ -319,4 +322,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
