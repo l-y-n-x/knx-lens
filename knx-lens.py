@@ -77,7 +77,7 @@ class KNXLens(App, KNXTuiLogic):
         binding_e_edit_rule,
         binding_m_new_group,
         binding_g_refresh_files,
-        binding_v_jump_last
+        binding_v_jump_last,
         binding_search,
     ]
 
